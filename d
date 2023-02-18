@@ -1,0 +1,6 @@
+iconUrl = json['iconUrl'],
+id = json['id'],
+createdAt = json['createdAt'],
+updatedAt = json['updatedAt'],
+url = json['url'],
+value = json['value'],
