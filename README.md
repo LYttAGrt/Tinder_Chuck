@@ -13,4 +13,8 @@ Second part uses two more buttons:
 No custom icon used - please, not for Tinder.
 Screenshots are given below.
 
+![alt text](ClickerPage.png)
+![alt text](Favorites.png)
+
+
 APK file is applied.
