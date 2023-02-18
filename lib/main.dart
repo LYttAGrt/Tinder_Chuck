@@ -6,20 +6,22 @@
 
 */
 
-
 import 'package:flutter/material.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart' as path;
+import 'fav.dart' as fav_page;
 
 void main() {
-  runApp(const MyApp());
+  runApp(const ChuckApp());
 }
 
 /* App itself is immutable widget - got it */
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ChuckApp extends StatelessWidget {
+  const ChuckApp({super.key});
 
   // This widget is the root of your application.
   @override
@@ -27,14 +29,14 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Tinder Chuck!',
       theme: ThemeData(primarySwatch: Colors.grey),
-      home: const MyHomePage(title: 'Tinder Chuck! Now on Flutter.'),
+      home: const ClickerPage(title: 'Tinder Chuck! Now on Flutter.'),
     );
   }
 }
 
 /* Home page, as an app's child, should have the state etc. - also got it */
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class ClickerPage extends StatefulWidget {
+  const ClickerPage({super.key, required this.title});
 
   // This widget is the home page of your application. It is stateful, meaning
   // that it has a State object (defined below) that contains fields that affect
@@ -48,80 +50,167 @@ class MyHomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<ClickerPage> createState() => _ClickerPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  final String url = 'https://api.chucknorris.io/jokes/random';
-  final String msg = 'Chucknorris.io did not send the nudes.';
-  final String btn = 'Swipe!';
-  late Future<Joke> futureJoke;
+class _ClickerPageState extends State<ClickerPage> {
+  // Logic ------------------------------------------------------------
+  // URLs.
+  final String funUrl = 'https://api.chucknorris.io/jokes/random';
+  final String catUrl = 'https://api.chucknorris.io/jokes/categories';
+  // In clear Android, I'd put these lines to R.
+  final String swpTxt = 'Swipe!';
+  final String errMsg = 'Chucknorris.io did not send the nudes.';
+  final String chkTxt = 'Star!';
+  final String defTxt = '(*) (*)';
+  final String jmpTxt = 'Check starred';
+  // These 3 variables are expected to be in AppContext
+  final String filepath = 'favorites.txt';
+  late String currentJoke;
+  late String currentValue = '';
 
-  Future<Joke> getJoke() async {
-    final http.Response response = await http.get(Uri.parse(url));
+  late Future<Joke> futureJoke;
+  late Future<List<String>> futureCategories;
+  List<String>? categories;
+
+  // Calls for new joke
+  Future<Joke> getJoke(String? category) async {
+    String query = funUrl;
+    if (category != null) {
+      query += '?category=$category';
+    }
+    final http.Response response = await http.get(Uri.parse(query));
     if (response.statusCode == 200) {
       return Joke.fromJson(jsonDecode(response.body));
     } else {
-      throw Exception(msg);
+      throw Exception(errMsg);
+    }
+  }
+
+  // Calls once per Activity
+  Future<List<String>> getCategories() async {
+    final http.Response catResponse = await http.get(Uri.parse(catUrl));
+    if (catResponse.statusCode == 200) {
+      Iterable<Object?> l = json.decode(catResponse.body);
+      debugPrint('Response itself: $l');
+      List<String> bufCategories =
+          List<String>.from(l.map((Object? model) => (model as String)));
+      categories = bufCategories.toList();
+      return bufCategories;
+    } else {
+      throw Exception(errMsg);
     }
   }
 
   @override
-  void initState(){
+  void initState() {
     super.initState();
-    futureJoke = getJoke();
+    // Get 1st joke
+    futureJoke = getJoke(null);
+    // Get list of categories
+    futureCategories = getCategories();
   }
 
-  void standUp() {
+  // Call for new joke
+  void standUp(String? category) {
     setState(() {
-      futureJoke = getJoke();
+      futureJoke = getJoke(category);
+      if (category != null) {
+        currentValue = category;
+      } else {
+        currentValue = categories!.first;
+      }
     });
   }
 
-  // Redraws the page
+  // Save marked value
+  Future<void> addFavorite(String line) async {
+    final Directory directory = await path.getApplicationDocumentsDirectory();
+    File file = File('${directory.path}/$filepath');
+    file.writeAsString('$line\n',
+        mode: FileMode.append, encoding: utf8, flush: true);
+  }
+
+  // UI ------------------------------------------------------------
+  /* Be advised, I'm not a good designer.
+	*
+	*   App top bar
+	* 	TextBox for current joke
+	* 	Random joke
+	*   DropdownButton (for clickable categories)
+	* 	Mark [append to favorites]
+	* 	Button as switcher
+	*/
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called
     return SafeArea(
-      top: true,
-      child: Scaffold(
-        // Top bar of page
-        appBar: AppBar(title: Text(widget.title)),
-        // Body of page
-        body: Padding (
-          padding: const EdgeInsets.all(20.0),
-          child: Center(
-            child: Column (
-              children: <Widget>[
-                Text(
-                  '',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                FutureBuilder<Joke>(
-                  future: futureJoke,
-                  builder: (BuildContext context, AsyncSnapshot<Joke> snapshot) {
-                    if (snapshot.hasData) {
-                      return Text(snapshot.data!.value);
-                    } else if (snapshot.hasError) {
-                      return Text('${snapshot.error}');
-                    }
-                    return Text(msg);
-                  }
-                ),
-                TextButton(
-                    onPressed: standUp,
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.lime,
-                      foregroundColor: Colors.black87
+        top: true,
+        child: Scaffold(
+          appBar: AppBar(title: Text(widget.title)),
+          // Body of page
+          body: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Center(
+                child: Column(
+                  children: <Widget>[
+                    Text(
+                      defTxt,
+                      style: Theme.of(context).textTheme.headlineMedium,
                     ),
-                    child: Text(btn)
-                )
-              ],
-            ),
-          )
-        ),
-      )
-    );
+                    FutureBuilder<Joke>(
+                        future: futureJoke,
+                        builder: (BuildContext context,
+                            AsyncSnapshot<Joke> snapshot) {
+                          if (snapshot.hasData) {
+                            currentJoke = snapshot.data!.value;
+                            return Text(snapshot.data!.value);
+                          } else if (snapshot.hasError) {
+                            return Text('${snapshot.error}');
+                          }
+                          return Text(errMsg);
+                        }),
+                    TextButton(
+                        onPressed: () => standUp(null),
+                        style: TextButton.styleFrom(
+                            backgroundColor: Colors.lime,
+                            foregroundColor: Colors.black87),
+                        child: Text(swpTxt)),
+                    DropdownButton(
+                      value: currentValue,
+                      items: categories
+                          ?.map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (String? value) => standUp(value as String),
+                    ),
+                    TextButton(
+                      onPressed: () => addFavorite(currentJoke),
+                      style: TextButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          foregroundColor: Colors.yellowAccent),
+                      child: Text(chkTxt),
+                    ),
+                    TextButton(
+                        style: TextButton.styleFrom(
+                            backgroundColor: Colors.greenAccent,
+                            foregroundColor: Colors.yellowAccent),
+                        onPressed: () {
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (BuildContext context) =>
+                                      fav_page.FavoritesPage(
+                                          title: widget.title)));
+                        },
+                        child: Text(jmpTxt))
+                  ],
+                ),
+              )),
+        ));
   }
 }
 
@@ -142,28 +231,18 @@ class Joke {
   final String value;
 
   // Java-like constructors. Deja-vu.
-  Joke(
-      this.iconUrl,
-      this.id,
-      this.createdAt,
-      this.updatedAt,
-      this.url,
-      this.value
-      );
+  Joke(this.iconUrl, this.id, this.createdAt, this.updatedAt, this.url,
+      this.value);
 
   // We need parsing only.
   // https://docs.flutter.dev/development/data-and-backend/json
-  //  tells there's an error below until the 1st compilation.
   // factory Joke.fromJson(Map<String, dynamic> json) => _$JokeFromJson(json);
-
-  // Ok, direct parsing only
-  Joke.fromJson(Map<String, dynamic> json):
-        iconUrl = json['icon_url'],
+  // Ok, direct parsing only since runtime compilation did not solve the highlighted error.
+  Joke.fromJson(Map<String, dynamic> json)
+      : iconUrl = json['icon_url'],
         id = json['id'],
         createdAt = json['created_at'],
         updatedAt = json['updated_at'],
         url = json['url'],
-        value = json['value']
-  ;
-
+        value = json['value'];
 }
